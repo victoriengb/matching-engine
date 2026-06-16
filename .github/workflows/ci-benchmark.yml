@@ -1,0 +1,80 @@
+name: CI Benchmark Pipeline
+
+on:
+  pull_request:
+    branches: [ main ]
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+
+  # ---------------------------------------------------------------------------
+  # Job 1 : correction fonctionnelle (compilation + tests unitaires)
+  # ---------------------------------------------------------------------------
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Build and run unit tests
+        run: mvn -B verify
+
+  # ---------------------------------------------------------------------------
+  # Job 2 : exécution des benchmarks JMH
+  # ---------------------------------------------------------------------------
+  benchmark:
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      # Tests déjà exécutés au job précédent : on les sautes ici pour ne pas
+      # dupliquer le travail et ne construire que le jar de benchmark.
+      - name: Build benchmark jar
+        run: mvn -B -DskipTests package
+
+      - name: Run JMH benchmarks
+        run: java -jar target/benchmarks.jar -rf json -rff jmh-result.json
+
+      - name: Upload benchmark result
+        uses: actions/upload-artifact@v4
+        with:
+          name: jmh-result
+          path: jmh-result.json
+
+  # ---------------------------------------------------------------------------
+  # Job 3 : comparaison à la baseline et application du gate de régression
+  # ---------------------------------------------------------------------------
+  compare-baseline:
+    needs: benchmark
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download benchmark result
+        uses: actions/download-artifact@v4
+        with:
+          name: jmh-result
+
+      - name: Compare against baseline
+        run: |
+          chmod +x scripts/compare-benchmarks.sh
+          ./scripts/compare-benchmarks.sh jmh-result.json benchmarks/baseline.json
