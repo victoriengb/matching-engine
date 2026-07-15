@@ -3,9 +3,13 @@ package com.victorien.matchingengine.book;
 import com.victorien.matchingengine.model.Order;
 import com.victorien.matchingengine.model.Side;
 
-import java.util.*;
-import java.util.logging.Level;
-import java.util.logging.Logger;
+import java.util.Comparator;
+import java.util.Deque;
+import java.util.Objects;
+import java.util.TreeMap;
+import java.util.Map;
+import java.util.HashMap;
+import java.util.ArrayDeque;
 
 /**
  * Carnet d'ordres baseline (Jalon 0) : structure volontairement non
@@ -50,8 +54,9 @@ public class OrderBook {
         if (this.ordersById.containsKey(order.orderId()))
             throw new IllegalArgumentException("Order already exists");
 
-        this.levelsFor(order.side()).putIfAbsent(order.price(), new LinkedList<Order>());
-        this.levelsFor(order.side()).get(order.price()).offerLast(order);
+        this.levelsFor(order.side())
+                .computeIfAbsent(order.price(), s -> new ArrayDeque<>())
+                .offerLast(order);
 
         this.ordersById.put(order.orderId(), order);
     }
@@ -63,9 +68,11 @@ public class OrderBook {
      * ET de l'index ordersById. Attention : l'ordre à retirer n'est pas
      * nécessairement en tête de sa file -- une annulation peut viser
      * n'importe quel ordre resting, pas seulement le plus prioritaire.
-     * Réfléchis au coût de cette opération sur un Deque : est-il
-     * constant ? Si non, c'est volontaire pour cette baseline, mais à
-     * documenter.
+     *
+     * Complexité : O(log n) pour localiser le niveau de prix via ordersById
+     * + O(k) pour removeIf sur la file, k étant le nombre d'ordres au niveau
+     * de prix concerné. Cette dégradation linéaire sur les annulations est une
+     * limitation documentée de la baseline, mesurable sous forte contention.
      *
      * @return l'ordre retiré, ou null s'il n'existait pas (déjà exécuté,
      *         déjà annulé, ou jamais inséré)
@@ -132,16 +139,11 @@ public class OrderBook {
     private Order maxOrder(Side side){
         if(this.levelsFor(side).isEmpty())
             return null;
-        Deque<Order> bestOrders = this.levelsFor(side).firstEntry().getValue();
 
-        Order maxOrder = bestOrders.peekFirst();
+        Order maxOrder = this.levelsFor(side).firstEntry().getValue().peekFirst();
 
-        if (Objects.isNull(maxOrder))
+        if (Objects.isNull(maxOrder)){
             throw new IllegalStateException("Price level exists with no orders — internal state violated");
-
-        for (Order order : bestOrders ){
-            if (maxOrder.createdAt() > order.createdAt())
-                maxOrder = order;
         }
         return maxOrder;
     }
