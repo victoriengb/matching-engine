@@ -1,5 +1,12 @@
 package com.victorien.matchingengine;
 
+import com.victorien.matchingengine.model.Order;
+import com.victorien.matchingengine.model.Side;
+import org.openjdk.jol.info.ClassLayout;
+
+import java.time.*;
+import java.util.Date;
+
 /**
  * Point d'entrée en ligne de commandes du matching engine.
  *
@@ -13,6 +20,10 @@ public final class Main {
     }
 
     public static void main(String[] args) {
-        System.out.println("Matching Engine — squelette de projet (Jalon 0 à venir)");
+        LocalDate date = LocalDate.of(2023, Month.FEBRUARY, 15);
+        Instant instant = date.atStartOfDay().atZone(ZoneId.of("UTC")).toInstant();
+
+        Order order = new Order(1L, Side.BUY, 100.0, 10, instant.getEpochSecond());
+        System.out.println(ClassLayout.parseInstance(order).toPrintable());
     }
 }
