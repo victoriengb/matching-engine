@@ -10,8 +10,7 @@ package com.victorien.matchingengine.model;
  * @param side        sens de l'ordre (ignoré pour CANCEL et MODIFY, qui
  *                    référencent un ordre déjà existant)
  * @param price       prix borné, cf. exigences non-fonctionnelles
- * @param quantity    quantité initiale pour NEW, nouvelle quantité pour
- *                    MODIFY, ignorée pour CANCEL
+ * @param quantity    quantité initiale pour NEW, ignorée pour MODIFY et CANCEL
  * @param createdAt   horodatage d'émission de la commande
  */
 public record OrderCommand(

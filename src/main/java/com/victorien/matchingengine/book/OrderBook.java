@@ -147,4 +147,8 @@ public class OrderBook {
         }
         return maxOrder;
     }
+
+    public boolean isEmpty(){
+        return this.ordersById.isEmpty();
+    }
 }

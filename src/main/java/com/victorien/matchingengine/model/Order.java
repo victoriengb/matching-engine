@@ -112,4 +112,8 @@ public class Order {
 
         this.status = Status.CANCELLED;
     }
+
+    public boolean isEmpty(){
+        return this.remainingQuantity == 0;
+    }
 }
