@@ -24,7 +24,7 @@ BASELINE_FILE="${2:?Usage: $0 <current_jmh_result.json> <baseline.json>}"
 # Nom complet du benchmark à surveiller (champ "benchmark" dans la sortie
 # JSON de JMH). À mettre à jour dès que le benchmark réel du matching
 # engine remplace le placeholder, au Jalon 0.
-readonly BENCHMARK_NAME="com.victorien.matchingengine.benchmark.PlaceholderBenchmark.run"
+readonly BENCHMARK_NAME="com.victorien.matchingengine.benchmark.MatchingEngineBenchmark.partialMatch"
 
 # Clé de percentile dans la sortie JMH (mode SampleTime). JMH ne reporte pas
 # nativement le P99.995 visé par l'état de l'art : les paliers fixes
@@ -35,7 +35,7 @@ readonly BENCHMARK_NAME="com.victorien.matchingengine.benchmark.PlaceholderBench
 # IMPORTANT : le format exact de cette clé (ex. "99.99" vs "99.9900") doit
 # être vérifié dans jmh-result.json après le premier run réel, et ajusté
 # ici si nécessaire.
-readonly PERCENTILE_KEY="99.99"
+readonly PERCENTILE_KEY="99.999"
 
 readonly REGRESSION_FAIL_THRESHOLD_PCT=20
 
