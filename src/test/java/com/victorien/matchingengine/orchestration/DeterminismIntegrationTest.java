@@ -4,12 +4,11 @@ import com.victorien.matchingengine.engine.MatchingEngine;
 import com.victorien.matchingengine.generator.OrderGenerator;
 import com.victorien.matchingengine.model.OrderCommand;
 import com.victorien.matchingengine.model.Trade;
+import com.victorien.matchingengine.ring.RingBuffer;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.LinkedBlockingQueue;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -22,13 +21,12 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
  * Taux de 100/s retenu pour ce test (et non 10 000/s) : cf. limitation
  * documentée dans OrderGenerator -- à 100/s, le comportement Poisson est
  * fidèle (validé empiriquement), contrairement à 10 000/s où
- * Thread.sleep() tronque 99,995 % des délais à 0 ms. Un test de
- * déterminisme doit s'appuyer sur un comportement de générateur
- * conforme à ce qu'il prétend faire, pas sur son mode dégradé.
+ * Thread.sleep() tronque 99,995 % des délais à 0 ms.
  */
 class DeterminismIntegrationTest {
 
     private static final double TEST_RATE_PER_SECOND = 100.0;
+    private static final int RING_CAPACITY = 2048;
 
     @Test
     void samesSeedShouldProduceIdenticalTradeSequence() throws InterruptedException {
@@ -43,33 +41,17 @@ class DeterminismIntegrationTest {
         }
     }
 
-    /**
-     * Compare deux trades en ignorant executedAt.
-     *
-     * Justification : executedAt dérive de Instant.now() dans
-     * MatchingEngine.buildTrade() (cf. TODO Jalon 1 -- appel système sur le
-     * chemin critique, non déterministe entre deux exécutions). Le
-     * déterminisme visé par la NFR porte sur LA SÉQUENCE ET LE CONTENU des
-     * matchs (mêmes ordres, mêmes prix, même ordre d'exécution), pas sur
-     * l'horodatage d'exécution, qui dépend légitimement de l'horloge
-     * murale. Une fois le TODO résolu (timestamp dérivé de données
-     * déterministes plutôt que de l'horloge système), cette exclusion
-     * pourra être retirée et remplacée par un assertEquals strict.
-     */
     private void assertTradesEqualIgnoringExecutionTime(Trade expected, Trade actual, int index) {
         assertEquals(expected.tradeId(), actual.tradeId(), "tradeId différent à l'index " + index);
         assertEquals(expected.buyOrderId(), actual.buyOrderId(), "buyOrderId différent à l'index " + index);
         assertEquals(expected.sellOrderId(), actual.sellOrderId(), "sellOrderId différent à l'index " + index);
         assertEquals(expected.executionPrice(), actual.executionPrice(), "executionPrice différent à l'index " + index);
         assertEquals(expected.quantity(), actual.quantity(), "quantity différent à l'index " + index);
-        // executedAt volontairement exclu -- cf. Javadoc de cette méthode
+        // executedAt volontairement exclu -- cf. TODO Jalon 1 sur Instant.now()
     }
 
     @Test
     void pipelineShouldProduceAtLeastOneTradeForSanityCheck() throws InterruptedException {
-        // Garde-fou : si ce test échoue, samesSeedShouldProduceIdenticalTradeSequence
-        // peut passer trivialement en comparant deux listes vides, ce qui ne
-        // prouve rien sur le déterminisme réel du matching.
         List<Trade> trades = runPipeline(1_000);
 
         assertFalse(trades.isEmpty(), "Le pipeline de test ne produit aucun trade -- "
@@ -77,8 +59,8 @@ class DeterminismIntegrationTest {
     }
 
     private List<Trade> runPipeline(int commandCount) throws InterruptedException {
-        BlockingQueue<OrderCommand> commands = new LinkedBlockingQueue<>();
-        BlockingQueue<Trade> trades = new LinkedBlockingQueue<>();
+        RingBuffer<OrderCommand> commands = new RingBuffer<>(RING_CAPACITY);
+        RingBuffer<Trade> trades = new RingBuffer<>(RING_CAPACITY);
         MatchingEngine engine = new MatchingEngine();
 
         Thread generator = new Thread(
@@ -91,17 +73,26 @@ class DeterminismIntegrationTest {
         generator.join();
         matcher.join();
 
+        return drainPublished(trades);
+    }
+
+    /**
+     * Lecture séquentielle de tout ce qui a été publié sur le ring, de la
+     * séquence 0 jusqu'au curseur inclus. RingBuffer n'expose pas de
+     * drainTo() (contrairement à BlockingQueue) -- ce n'est pas un besoin
+     * de production, seulement de test, d'où cette lecture manuelle
+     * plutôt qu'une méthode ajoutée au RingBuffer pour ce seul usage.
+     */
+    private List<Trade> drainPublished(RingBuffer<Trade> ring) {
         List<Trade> collected = new ArrayList<>();
-        trades.drainTo(collected);
+        long cursor = ring.getCursor();
 
-        // Retire le signal d'arrêt propagé par MatchingWorker vers la file
-        // de trades, en miroir d'OrderGenerator.SHUTDOWN_SIGNAL. Référencé
-        // explicitement (pas de magic value -1L) pour rester couplé à la
-        // définition canonique -- si le sentinel change de forme dans
-        // MatchingWorker, ce test doit casser à la compilation, pas
-        // silencieusement laisser passer un faux trade.
-        collected.remove(MatchingWorker.SHUTDOWN_SIGNAL);
-
+        for (long seq = 0; seq <= cursor; seq++) {
+            Trade trade = ring.get(seq);
+            if (trade != null && !trade.equals(MatchingWorker.SHUTDOWN_SIGNAL)) {
+                collected.add(trade);
+            }
+        }
         return collected;
     }
 }

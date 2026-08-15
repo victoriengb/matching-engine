@@ -3,9 +3,9 @@ package com.victorien.matchingengine.generator;
 import com.victorien.matchingengine.model.OrderCommand;
 import com.victorien.matchingengine.model.OrderCommand.CommandType;
 import com.victorien.matchingengine.model.Side;
+import com.victorien.matchingengine.ring.RingBuffer;
 
 import java.util.Random;
-import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -56,23 +56,23 @@ public class OrderGenerator implements Runnable {
     public static final OrderCommand SHUTDOWN_SIGNAL =
             new OrderCommand(CommandType.NEW, -1L, Side.BUY, -1.0, -1, -1L);
 
-    private final BlockingQueue<OrderCommand> outputQueue;
+    private final RingBuffer<OrderCommand> outputOrderCommandRingBuffer;
     private final int commandCount;
     private final double targetRatePerSecond;
     private final AtomicLong orderIdGenerator = new AtomicLong(1);
     private final Random random = new Random(42); // seed fixe : déterminisme du jeu de test
 
     /**
-     * @param outputQueue         file de destination des commandes générées
+     * @param outputOrderCommandRingBuffer         file de destination des commandes générées
      * @param commandCount        nombre total de commandes à générer avant
      *                            l'envoi du signal d'arrêt
      * @param targetRatePerSecond taux moyen visé (lambda du processus de
      *                            Poisson), en commandes par seconde
      */
-    public OrderGenerator(BlockingQueue<OrderCommand> outputQueue,
+    public OrderGenerator(RingBuffer<OrderCommand> outputOrderCommandRingBuffer,
                           int commandCount,
                           double targetRatePerSecond) {
-        this.outputQueue = outputQueue;
+        this.outputOrderCommandRingBuffer = outputOrderCommandRingBuffer;
         this.commandCount = commandCount;
         this.targetRatePerSecond = targetRatePerSecond;
     }
@@ -80,11 +80,16 @@ public class OrderGenerator implements Runnable {
     @Override
     public void run() {
         try {
+            long sequence;
             for (int i = 0; i < commandCount; i++) {
-                outputQueue.put(randomCommand());
+                sequence = this.outputOrderCommandRingBuffer.next();
+                this.outputOrderCommandRingBuffer.set(sequence, randomCommand());
+                this.outputOrderCommandRingBuffer.publish(sequence);
                 Thread.sleep(nextInterArrivalMillis());
             }
-            outputQueue.put(SHUTDOWN_SIGNAL);
+            sequence = this.outputOrderCommandRingBuffer.next();
+            outputOrderCommandRingBuffer.set(sequence, SHUTDOWN_SIGNAL);
+            this.outputOrderCommandRingBuffer.publish(sequence);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             Logger.getLogger(OrderGenerator.class.getName()).log(Level.SEVERE, "Thread interrupted unexpectedly");
