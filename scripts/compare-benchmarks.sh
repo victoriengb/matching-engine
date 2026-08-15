@@ -24,7 +24,8 @@ BASELINE_FILE="${2:?Usage: $0 <current_jmh_result.json> <baseline.json>}"
 # Nom complet du benchmark à surveiller (champ "benchmark" dans la sortie
 # JSON de JMH). À mettre à jour dès que le benchmark réel du matching
 # engine remplace le placeholder, au Jalon 0.
-readonly BENCHMARK_NAME="com.victorien.matchingengine.benchmark.MatchingEngineBenchmark.partialMatch"
+readonly BENCHMARK_NAME_MATCHING="com.victorien.matchingengine.benchmark.MatchingEngineBenchmark.partialMatch"
+readonly BENCHMARK_NAME_TRANSPORT="com.victorien.matchingengine.benchmark.TransportLatencyBenchmark.ringBufferRoundTrip"
 
 # Clé de percentile dans la sortie JMH (mode SampleTime). JMH ne reporte pas
 # nativement le P99.995 visé par l'état de l'art : les paliers fixes
