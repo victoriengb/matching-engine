@@ -47,14 +47,14 @@ public class MatchingEngineSoABenchmark {
 
     private static final int INCOMING_QUANTITY_EXCEEDING_RESIDENT = RESIDENT_QUANTITY + 5;
 
-    private static final int MATCHING_ENGINE_CAPACITY = 64;
+    private static final int MATCHING_ENGINE_CAPACITY = 10_000;
     private static final int PRICE_TICKS = 20_000;
 
     // Taille du niveau de prix pour le scénario CANCEL_WORST_CASE.
     // Valeur arbitraire mais représentative d'un niveau de prix
     // "populaire" -- suffisamment grande pour rendre le coût O(k) de
     // removeIf() visible dans la mesure face au bruit de fond.
-    private static final int WORST_CASE_LEVEL_SIZE = 50;
+    private static final int WORST_CASE_LEVEL_SIZE = 5_000;
 
     @State(Scope.Thread)
     public static class RestingOrderState {
