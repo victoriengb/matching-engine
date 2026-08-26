@@ -1,78 +1,101 @@
 package com.victorien.matchingengine.orchestration;
 
-import com.victorien.matchingengine.engine.MatchingEngine;
+import com.victorien.matchingengine.dod.MatchingEngineSoA;
 import com.victorien.matchingengine.generator.OrderGenerator;
 import com.victorien.matchingengine.model.OrderCommand;
 import com.victorien.matchingengine.model.Trade;
+import com.victorien.matchingengine.ring.RingBuffer;
 import org.junit.jupiter.api.Test;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+/**
+ * Vérifie le comportement de MatchingWorker face à l'interruption, dans
+ * sa version RingBuffer (busy-spin).
+ *
+ * DIFFÉRENCE MAJEURE avec la version BlockingQueue (Jalon 0) : un thread
+ * en busy-spin ne quitte JAMAIS l'état RUNNABLE -- il n'existe donc plus
+ * de moyen fiable de détecter "le thread est en train d'attendre" via
+ * Thread.getState() (contrairement à WAITING/TIMED_WAITING sur un
+ * take() bloquant). Les tests ci-dessous se rabattent sur un délai fixe
+ * pour laisser le thread entrer dans sa boucle de spin avant
+ * d'interrompre -- une approximation temporelle, moins rigoureuse que
+ * la détection d'état de la version précédente, mais la seule option
+ * disponible avec ce modèle de concurrence.
+ */
 class MatchingWorkerInterruptionTest {
+
+    private static final int RING_CAPACITY = 8;
+
+    private static final int MATCHING_ENGINE_CAPACITY = 8192;
+    private static final int PRICE_TICKS = 10_000_000;
 
     @Test
     void normalShutdownShouldPropagateSignalExactlyOnce() throws InterruptedException {
-        BlockingQueue<OrderCommand> inputQueue = new ArrayBlockingQueue<>(4);
-        BlockingQueue<Trade> outputQueue = new ArrayBlockingQueue<>(4);
-        MatchingWorker worker = new MatchingWorker(inputQueue, outputQueue, new MatchingEngine());
+        RingBuffer<OrderCommand> inputRing = new RingBuffer<>(RING_CAPACITY);
+        RingBuffer<Trade> outputRing = new RingBuffer<>(RING_CAPACITY);
+        MatchingWorker worker = new MatchingWorker(inputRing, outputRing, new MatchingEngineSoA(MATCHING_ENGINE_CAPACITY, PRICE_TICKS));
 
-        inputQueue.put(OrderGenerator.SHUTDOWN_SIGNAL);
+        long seq = inputRing.next();
+        inputRing.set(seq, OrderGenerator.SHUTDOWN_SIGNAL);
+        inputRing.publish(seq);
 
+        // Chemin normal : run() retourne dès réception du signal d'arrêt,
+        // pas besoin de thread séparé.
         worker.run();
 
-        List<Trade> collected = drainAll(outputQueue);
-
-        assertEquals(1, collected.size(),
-                "Le signal d'arrêt ne doit être propagé qu'une seule fois sur le chemin normal");
-        assertEquals(MatchingWorker.SHUTDOWN_SIGNAL, collected.get(0));
+        assertEquals(0L, outputRing.getCursor(),
+                "Une seule séquence doit avoir été publiée sur le ring de sortie");
+        assertEquals(MatchingWorker.SHUTDOWN_SIGNAL, outputRing.get(0L));
     }
 
     @Test
-    void interruptionWhileBlockedOnTakeShouldStillPropagateShutdownSignal() throws InterruptedException {
-        BlockingQueue<OrderCommand> inputQueue = new ArrayBlockingQueue<>(1);
-        BlockingQueue<Trade> outputQueue = new ArrayBlockingQueue<>(4);
-        MatchingWorker worker = new MatchingWorker(inputQueue, outputQueue, new MatchingEngine());
+    @org.junit.jupiter.api.Timeout(value = 5, unit = TimeUnit.SECONDS)
+    void interruptionWhileSpinningShouldStillPropagateShutdownSignal() throws InterruptedException {
+        RingBuffer<OrderCommand> inputRing = new RingBuffer<>(RING_CAPACITY);
+        RingBuffer<Trade> outputRing = new RingBuffer<>(RING_CAPACITY);
+        MatchingWorker worker = new MatchingWorker(inputRing, outputRing, new MatchingEngineSoA(MATCHING_ENGINE_CAPACITY, PRICE_TICKS));
 
+        // Rien n'est publié sur inputRing : le thread entre immédiatement
+        // en busy-spin, dans l'attente d'une séquence qui ne viendra
+        // jamais par la voie normale.
         Thread workerThread = new Thread(worker, "matching-worker-under-test");
         workerThread.start();
 
-        waitUntilBlockedOnTake(workerThread);
+        waitBrieflyForSpinToStart();
 
         workerThread.interrupt();
         workerThread.join(TimeUnit.SECONDS.toMillis(2));
 
         assertTrue(!workerThread.isAlive(), "Le thread doit se terminer après interruption");
-
-        List<Trade> collected = drainAll(outputQueue);
-
-        assertEquals(1, collected.size(),
-                "Le signal d'arrêt doit être propagé exactement une fois après interruption, "
-                        + "pour éviter que PersistenceWorker reste bloqué indéfiniment");
-        assertEquals(MatchingWorker.SHUTDOWN_SIGNAL, collected.get(0));
+        assertEquals(0L, outputRing.getCursor(),
+                "Le signal d'arrêt doit être propagé exactement une fois après interruption");
+        assertEquals(MatchingWorker.SHUTDOWN_SIGNAL, outputRing.get(0L));
     }
 
     @Test
-    void interruptedThreadShouldNotHangWaitingForPersistenceWorker() throws InterruptedException {
-        BlockingQueue<OrderCommand> commandQueue = new ArrayBlockingQueue<>(1);
-        BlockingQueue<Trade> tradeQueue = new ArrayBlockingQueue<>(4);
-        MatchingWorker matchingWorker = new MatchingWorker(commandQueue, tradeQueue, new MatchingEngine());
+    @org.junit.jupiter.api.Timeout(value = 5, unit = TimeUnit.SECONDS)
+    void interruptedThreadShouldNotHangWaitingForPersistenceWorker() throws InterruptedException, java.io.IOException {
+        RingBuffer<OrderCommand> inputRing = new RingBuffer<>(RING_CAPACITY);
+        RingBuffer<Trade> outputRing = new RingBuffer<>(RING_CAPACITY);
+        MatchingWorker matchingWorker = new MatchingWorker(inputRing, outputRing, new MatchingEngineSoA(MATCHING_ENGINE_CAPACITY, PRICE_TICKS));
 
         Thread matchingThread = new Thread(matchingWorker, "matching-worker-under-test");
         matchingThread.start();
-        waitUntilBlockedOnTake(matchingThread);
+        waitBrieflyForSpinToStart();
         matchingThread.interrupt();
         matchingThread.join(TimeUnit.SECONDS.toMillis(2));
 
+        // PersistenceWorker démarré APRES l'interruption, pour lire le
+        // signal déjà déposé dans outputRing par le finally de
+        // MatchingWorker -- s'il n'a pas été déposé, ce thread reste en
+        // busy-spin indéfiniment et le test échoue par @Timeout.
         StringWriterStub csvSink = new StringWriterStub();
         Thread persistenceThread = new Thread(
-                new PersistenceWorker(tradeQueue, csvSink), "persistence-worker-under-test");
+                new PersistenceWorker(outputRing, csvSink), "persistence-worker-under-test");
         persistenceThread.start();
         persistenceThread.join(TimeUnit.SECONDS.toMillis(2));
 
@@ -81,21 +104,14 @@ class MatchingWorkerInterruptionTest {
                         + "le signal d'arrêt n'a pas été propagé correctement");
     }
 
-    private void waitUntilBlockedOnTake(Thread thread) throws InterruptedException {
-        long deadline = System.currentTimeMillis() + TimeUnit.SECONDS.toMillis(1);
-        while (System.currentTimeMillis() < deadline) {
-            if (thread.getState() == Thread.State.WAITING
-                    || thread.getState() == Thread.State.TIMED_WAITING) {
-                return;
-            }
-            Thread.sleep(10);
-        }
-    }
-
-    private List<Trade> drainAll(BlockingQueue<Trade> queue) {
-        List<Trade> collected = new ArrayList<>();
-        queue.drainTo(collected);
-        return collected;
+    /**
+     * Laisse au thread producteur/consommateur le temps d'entrer dans sa
+     * boucle de busy-spin avant qu'on ne l'interrompe. Approximation
+     * temporelle assumée -- cf. Javadoc de classe : aucune détection
+     * d'état fiable n'est possible avec un busy-spin.
+     */
+    private void waitBrieflyForSpinToStart() throws InterruptedException {
+        Thread.sleep(100);
     }
 
     private static class StringWriterStub extends java.io.Writer {

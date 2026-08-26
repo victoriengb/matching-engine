@@ -1,4 +1,4 @@
-package com.victorien.matchingengine.engine;
+package com.victorien.matchingengine.dod;
 
 import com.victorien.matchingengine.model.OrderCommand;
 import com.victorien.matchingengine.model.OrderCommand.CommandType;
@@ -13,13 +13,28 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-class MatchingEngineTest {
+/**
+ * Tests de MatchingEngineSoA, adaptés de MatchingEngineTest (Jalon 0).
+ * Même comportement observable attendu -- c'est la preuve d'équivalence
+ * fonctionnelle entre la baseline et le Jalon 5b, comme convenu dès
+ * l'Exercice 10 (comparaison reportée au niveau du moteur, pas du
+ * carnet en isolation).
+ *
+ * Seule différence de méthode : OrderCommand.price() (double) est
+ * tronqué en tick entier par MatchingEngineSoA -- toutes les valeurs de
+ * prix ci-dessous restent des entiers exacts (100.0, 105.0, etc.) pour
+ * que cette conversion soit sans perte et ne biaise pas la comparaison.
+ */
+class MatchingEngineSoATest {
 
-    private MatchingEngine engine;
+    private static final int CAPACITY = 64;
+    private static final int PRICE_TICKS = 20_000;
+
+    private MatchingEngineSoA engine;
 
     @BeforeEach
     void setUp() {
-        engine = new MatchingEngine();
+        engine = new MatchingEngineSoA(CAPACITY, PRICE_TICKS);
     }
 
     // --- Cas NEW sans match ---
@@ -48,7 +63,6 @@ class MatchingEngineTest {
 
     @Test
     void executionPriceShouldBeResidentOrderPrice() {
-        // Résident SELL à 100, agresseur BUY à 105 — exécution à 100
         engine.process(new OrderCommand(CommandType.NEW, 1L, Side.SELL, 100.0, 10, 1000L));
 
         List<Trade> trades = engine.process(
@@ -90,7 +104,6 @@ class MatchingEngineTest {
         engine.process(new OrderCommand(CommandType.NEW,    1L, Side.SELL, 100.0, 10, 1000L));
         engine.process(new OrderCommand(CommandType.CANCEL, 1L, Side.SELL, 100.0, 0,  1001L));
 
-        // Après annulation, un BUY au même prix ne doit plus trouver de contrepartie
         List<Trade> trades = engine.process(
                 new OrderCommand(CommandType.NEW, 2L, Side.BUY, 100.0, 10, 1002L));
 
@@ -104,8 +117,6 @@ class MatchingEngineTest {
         engine.process(new OrderCommand(CommandType.NEW,    1L, Side.SELL, 105.0, 10, 1000L));
         engine.process(new OrderCommand(CommandType.NEW,    2L, Side.BUY,  95.0,  10, 1001L));
 
-        // Aucun match au prix initial (105 > 95)
-        // On modifie le SELL à 95 — il croise maintenant le BUY à 95
         List<Trade> trades = engine.process(
                 new OrderCommand(CommandType.MODIFY, 1L, Side.SELL, 95.0, 10, 1002L));
 
@@ -123,7 +134,6 @@ class MatchingEngineTest {
         List<Trade> trades = engine.process(
                 new OrderCommand(CommandType.NEW, 3L, Side.BUY, 105.0, 5, 1002L));
 
-        // Le SELL à 100 doit matcher en premier (meilleur prix pour l'acheteur)
         assertEquals(1, trades.size());
         assertEquals(100.0, trades.getFirst().executionPrice());
     }
@@ -136,7 +146,6 @@ class MatchingEngineTest {
         List<Trade> trades = engine.process(
                 new OrderCommand(CommandType.NEW, 3L, Side.BUY, 100.0, 5, 1002L));
 
-        // L'ordre 1 (plus ancien) doit matcher en premier
         assertEquals(1, trades.size());
         assertEquals(1L, trades.getFirst().sellOrderId());
     }
@@ -221,11 +230,9 @@ class MatchingEngineTest {
 
     @Test
     void partialMatchShouldLeaveIncomingResidualInBook() {
-        // maker qty=5, taker qty=10 → trade de 5, résiduel taker de 5 reste dans le carnet
         engine.process(new OrderCommand(CommandType.NEW, 1L, Side.SELL, 100.0, 5,  1000L));
         engine.process(new OrderCommand(CommandType.NEW, 2L, Side.BUY,  100.0, 10, 1001L));
 
-        // Un nouveau SELL doit trouver le résiduel BUY toujours présent
         List<Trade> trades = engine.process(
                 new OrderCommand(CommandType.NEW, 3L, Side.SELL, 100.0, 5, 1002L));
 
@@ -235,11 +242,9 @@ class MatchingEngineTest {
 
     @Test
     void partialMatchShouldLeaveResidentResidualInBook() {
-        // maker qty=10, taker qty=5 → trade de 5, résiduel maker de 5 reste dans le carnet
         engine.process(new OrderCommand(CommandType.NEW, 1L, Side.SELL, 100.0, 10, 1000L));
         engine.process(new OrderCommand(CommandType.NEW, 2L, Side.BUY,  100.0, 5,  1001L));
 
-        // Un nouveau BUY doit trouver le résiduel SELL toujours présent
         List<Trade> trades = engine.process(
                 new OrderCommand(CommandType.NEW, 3L, Side.BUY, 100.0, 5, 1002L));
 
@@ -258,14 +263,13 @@ class MatchingEngineTest {
     @Test
     void cancelPartiallyFilledOrderShouldSucceed() {
         engine.process(new OrderCommand(CommandType.NEW,    1L, Side.SELL, 100.0, 10, 1000L));
-        engine.process(new OrderCommand(CommandType.NEW,    2L, Side.BUY,  100.0, 5,  1001L));  // fill partiel : SELL a qty=5 restante
+        engine.process(new OrderCommand(CommandType.NEW,    2L, Side.BUY,  100.0, 5,  1001L));
 
         List<Trade> cancelResult = engine.process(
                 new OrderCommand(CommandType.CANCEL, 1L, Side.SELL, 0, 0, 1002L));
 
         assertTrue(cancelResult.isEmpty());
 
-        // Le résiduel SELL doit avoir été retiré du carnet
         List<Trade> trades = engine.process(
                 new OrderCommand(CommandType.NEW, 3L, Side.BUY, 100.0, 5, 1003L));
         assertTrue(trades.isEmpty());
@@ -284,7 +288,6 @@ class MatchingEngineTest {
         engine.process(new OrderCommand(CommandType.NEW, 1L, Side.BUY,  90.0,  10, 1000L));
         engine.process(new OrderCommand(CommandType.NEW, 2L, Side.SELL, 100.0, 10, 1001L));
 
-        // Modification du SELL à 95 — toujours au-dessus du BUY à 90, pas de croisement
         List<Trade> trades = engine.process(
                 new OrderCommand(CommandType.MODIFY, 2L, Side.SELL, 95.0, 0, 1002L));
 
@@ -296,13 +299,11 @@ class MatchingEngineTest {
         engine.process(new OrderCommand(CommandType.NEW, 1L, Side.SELL, 100.0, 5, 1000L));
         engine.process(new OrderCommand(CommandType.NEW, 2L, Side.SELL, 100.0, 5, 1001L));
 
-        // Modifier l'ordre 1 au même prix : il perd sa priorité et passe derrière l'ordre 2
         engine.process(new OrderCommand(CommandType.MODIFY, 1L, Side.SELL, 100.0, 0, 1002L));
 
         List<Trade> trades = engine.process(
                 new OrderCommand(CommandType.NEW, 3L, Side.BUY, 100.0, 5, 1003L));
 
-        // L'ordre 2 (désormais le plus ancien à ce prix) doit matcher en premier
         assertEquals(1, trades.size());
         assertEquals(2L, trades.getFirst().sellOrderId());
     }
@@ -310,9 +311,8 @@ class MatchingEngineTest {
     @Test
     void modifyPartiallyFilledOrderShouldUseRemainingQuantity() {
         engine.process(new OrderCommand(CommandType.NEW, 1L, Side.SELL, 100.0, 10, 1000L));
-        engine.process(new OrderCommand(CommandType.NEW, 2L, Side.BUY,  100.0, 3,  1001L));  // fill partiel : SELL a qty=7 restante
+        engine.process(new OrderCommand(CommandType.NEW, 2L, Side.BUY,  100.0, 3,  1001L));
 
-        // Modifier le prix du SELL (qty résiduelle = 7, pas 10)
         engine.process(new OrderCommand(CommandType.MODIFY, 1L, Side.SELL, 95.0, 0, 1002L));
 
         List<Trade> trades = engine.process(

@@ -1,11 +1,12 @@
 package com.victorien.matchingengine;
 
-import com.victorien.matchingengine.engine.MatchingEngine;
+import com.victorien.matchingengine.dod.MatchingEngineSoA;
 import com.victorien.matchingengine.generator.OrderGenerator;
 import com.victorien.matchingengine.model.OrderCommand;
 import com.victorien.matchingengine.model.Trade;
 import com.victorien.matchingengine.orchestration.MatchingWorker;
 import com.victorien.matchingengine.orchestration.PersistenceWorker;
+import com.victorien.matchingengine.ring.RingBuffer;
 
 import java.io.FileWriter;
 import java.io.IOException;
@@ -14,27 +15,28 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.BlockingQueue;
 
 public final class Main {
 
     private static final int COMMAND_COUNT = 10_000;
     private static final double TARGET_RATE_PER_SECOND = 10_000.0;
-    private static final int QUEUE_CAPACITY = 1024;
+    private static final int RING_BUFFER_CAPACITY = 1024;
     private static final Path OUTPUT_DIR = Path.of("resources/");
 
     private static final DateTimeFormatter TIMESTAMP_FORMAT =
             DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss-SSS");
 
+    private static final int MATCHING_ENGINE_CAPACITY = 8192;
+    private static final int PRICE_TICKS = 10_000_000;
+
     private Main() {
     }
 
     public static void main(String[] args) throws InterruptedException, IOException {
-        BlockingQueue<OrderCommand> commandQueue = new ArrayBlockingQueue<>(QUEUE_CAPACITY);
-        BlockingQueue<Trade> tradeQueue = new ArrayBlockingQueue<>(QUEUE_CAPACITY);
+        RingBuffer<OrderCommand> commandQueue = new RingBuffer<>(RING_BUFFER_CAPACITY);
+        RingBuffer<Trade> tradeQueue = new RingBuffer<>(RING_BUFFER_CAPACITY);
 
-        MatchingEngine engine = new MatchingEngine();
+        MatchingEngineSoA engine = new MatchingEngineSoA(MATCHING_ENGINE_CAPACITY, PRICE_TICKS);
         String outputCsvPath = buildOutputCsvPath();
 
         try (Writer csvWriter = new FileWriter(outputCsvPath)) {
