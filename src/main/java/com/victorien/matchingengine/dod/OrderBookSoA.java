@@ -2,6 +2,7 @@ package com.victorien.matchingengine.dod;
 
 import com.victorien.matchingengine.model.Side;
 import org.agrona.collections.Long2LongHashMap;
+import org.agrona.collections.Hashing;
 
 import java.util.Arrays;
 
@@ -122,7 +123,7 @@ public class OrderBookSoA {
         this.freeSlotCount = capacity;
 
         // ═══ Index externe ═══
-        this.slotByOrderId = new Long2LongHashMap(EMPTY);
+        this.slotByOrderId = new Long2LongHashMap(capacity, Hashing.DEFAULT_LOAD_FACTOR, EMPTY);
     }
 
     public void insert(long orderId, Side side, int priceInTicks,
