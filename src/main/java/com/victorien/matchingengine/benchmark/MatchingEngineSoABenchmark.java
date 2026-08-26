@@ -47,8 +47,8 @@ public class MatchingEngineSoABenchmark {
 
     private static final int INCOMING_QUANTITY_EXCEEDING_RESIDENT = RESIDENT_QUANTITY + 5;
 
-    private static final int MATCHING_ENGINE_CAPACITY = 8192;
-    private static final int PRICE_TICKS = 10_000_000;
+    private static final int MATCHING_ENGINE_CAPACITY = 64;
+    private static final int PRICE_TICKS = 20_000;
 
     // Taille du niveau de prix pour le scénario CANCEL_WORST_CASE.
     // Valeur arbitraire mais représentative d'un niveau de prix
@@ -181,5 +181,19 @@ public class MatchingEngineSoABenchmark {
                 RESIDENT_PRICE, INCOMING_QUANTITY_EXCEEDING_RESIDENT, System.nanoTime());
 
         blackhole.consume(state.engine.process(incoming));
+    }
+
+    @Benchmark
+    public void cancelBestCase(CancelBestCaseState state, Blackhole blackhole) {
+        blackhole.consume(state.engine.process(
+                new OrderCommand(CommandType.CANCEL, state.orderIdToCancel, Side.SELL,
+                        RESIDENT_PRICE, RESIDENT_QUANTITY, System.nanoTime())));
+    }
+
+    @Benchmark
+    public void cancelWorstCase(CancelWorstCaseState state, Blackhole blackhole) {
+        blackhole.consume(state.engine.process(
+                new OrderCommand(CommandType.CANCEL, state.orderIdToCancel, Side.SELL,
+                        RESIDENT_PRICE, RESIDENT_QUANTITY, System.nanoTime())));
     }
 }
