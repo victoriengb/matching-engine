@@ -51,7 +51,7 @@ public class MatchingEngineBenchmark {
     // Valeur arbitraire mais représentative d'un niveau de prix
     // "populaire" -- suffisamment grande pour rendre le coût O(k) de
     // removeIf() visible dans la mesure face au bruit de fond.
-    private static final int WORST_CASE_LEVEL_SIZE = 50;
+    private static final int WORST_CASE_LEVEL_SIZE = 5_000;
 
     @State(Scope.Thread)
     public static class RestingOrderState {
@@ -178,5 +178,19 @@ public class MatchingEngineBenchmark {
                 RESIDENT_PRICE, INCOMING_QUANTITY_EXCEEDING_RESIDENT, System.nanoTime());
 
         blackhole.consume(state.engine.process(incoming));
+    }
+
+    @Benchmark
+    public void cancelBestCase(CancelBestCaseState state, Blackhole blackhole) {
+        blackhole.consume(state.engine.process(
+                new OrderCommand(CommandType.CANCEL, state.orderIdToCancel, Side.SELL,
+                        RESIDENT_PRICE, RESIDENT_QUANTITY, System.nanoTime())));
+    }
+
+    @Benchmark
+    public void cancelWorstCase(CancelWorstCaseState state, Blackhole blackhole) {
+        blackhole.consume(state.engine.process(
+                new OrderCommand(CommandType.CANCEL, state.orderIdToCancel, Side.SELL,
+                        RESIDENT_PRICE, RESIDENT_QUANTITY, System.nanoTime())));
     }
 }
