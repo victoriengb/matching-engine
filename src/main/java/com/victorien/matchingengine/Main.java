@@ -1,6 +1,6 @@
 package com.victorien.matchingengine;
 
-import com.victorien.matchingengine.engine.MatchingEngine;
+import com.victorien.matchingengine.dod.MatchingEngineSoA;
 import com.victorien.matchingengine.generator.OrderGenerator;
 import com.victorien.matchingengine.model.OrderCommand;
 import com.victorien.matchingengine.model.Trade;
@@ -26,6 +26,9 @@ public final class Main {
     private static final DateTimeFormatter TIMESTAMP_FORMAT =
             DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss-SSS");
 
+    private static final int MATCHING_ENGINE_CAPACITY = 8192;
+    private static final int PRICE_TICKS = 10_000_000;
+
     private Main() {
     }
 
@@ -33,7 +36,7 @@ public final class Main {
         RingBuffer<OrderCommand> commandQueue = new RingBuffer<>(RING_BUFFER_CAPACITY);
         RingBuffer<Trade> tradeQueue = new RingBuffer<>(RING_BUFFER_CAPACITY);
 
-        MatchingEngine engine = new MatchingEngine();
+        MatchingEngineSoA engine = new MatchingEngineSoA(MATCHING_ENGINE_CAPACITY, PRICE_TICKS);
         String outputCsvPath = buildOutputCsvPath();
 
         try (Writer csvWriter = new FileWriter(outputCsvPath)) {

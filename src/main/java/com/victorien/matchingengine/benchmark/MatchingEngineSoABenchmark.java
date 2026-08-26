@@ -1,6 +1,6 @@
 package com.victorien.matchingengine.benchmark;
 
-import com.victorien.matchingengine.engine.MatchingEngine;
+import com.victorien.matchingengine.dod.MatchingEngineSoA;
 import com.victorien.matchingengine.model.OrderCommand;
 import com.victorien.matchingengine.model.OrderCommand.CommandType;
 import com.victorien.matchingengine.model.Side;
@@ -40,12 +40,15 @@ import java.util.concurrent.TimeUnit;
 @Warmup(iterations = 5, time = 1, timeUnit = TimeUnit.SECONDS)
 @Measurement(iterations = 10, time = 1, timeUnit = TimeUnit.SECONDS)
 @Fork(1)
-public class MatchingEngineBenchmark {
+public class MatchingEngineSoABenchmark {
 
     private static final double RESIDENT_PRICE = 100.0;
     private static final int RESIDENT_QUANTITY = 10;
 
     private static final int INCOMING_QUANTITY_EXCEEDING_RESIDENT = RESIDENT_QUANTITY + 5;
+
+    private static final int MATCHING_ENGINE_CAPACITY = 8192;
+    private static final int PRICE_TICKS = 10_000_000;
 
     // Taille du niveau de prix pour le scénario CANCEL_WORST_CASE.
     // Valeur arbitraire mais représentative d'un niveau de prix
@@ -55,7 +58,7 @@ public class MatchingEngineBenchmark {
 
     @State(Scope.Thread)
     public static class RestingOrderState {
-        MatchingEngine engine;
+        MatchingEngineSoA engine;
         long nextOrderId;
 
         @Setup(Level.Invocation)
@@ -64,19 +67,19 @@ public class MatchingEngineBenchmark {
             // engine avant CHAQUE invocation mesurée, le TreeMap et le
             // HashMap internes à OrderBook grossiraient au fil des
             // milliers d'appels JMH, faussant progressivement la mesure.
-            engine = new MatchingEngine();
+            engine = new MatchingEngineSoA(MATCHING_ENGINE_CAPACITY, PRICE_TICKS);
             nextOrderId = 1L;
         }
     }
 
     @State(Scope.Thread)
     public static class FullMatchState {
-        MatchingEngine engine;
+        MatchingEngineSoA engine;
         long nextOrderId;
 
         @Setup(Level.Invocation)
         public void setup() {
-            engine = new MatchingEngine();
+            engine = new MatchingEngineSoA(MATCHING_ENGINE_CAPACITY, PRICE_TICKS);
             nextOrderId = 1L;
 
             OrderCommand residentSell = new OrderCommand(
@@ -88,12 +91,12 @@ public class MatchingEngineBenchmark {
 
     @State(Scope.Thread)
     public static class PartialMatchState {
-        MatchingEngine engine;
+        MatchingEngineSoA engine;
         long nextOrderId;
 
         @Setup(Level.Invocation)
         public void setup() {
-            engine = new MatchingEngine();
+            engine = new MatchingEngineSoA(MATCHING_ENGINE_CAPACITY, PRICE_TICKS);
             nextOrderId = 1L;
 
             OrderCommand residentSell = new OrderCommand(
@@ -105,12 +108,12 @@ public class MatchingEngineBenchmark {
 
     @State(Scope.Thread)
     public static class CancelBestCaseState {
-        MatchingEngine engine;
+        MatchingEngineSoA engine;
         long orderIdToCancel;
 
         @Setup(Level.Invocation)
         public void setup() {
-            engine = new MatchingEngine();
+            engine = new MatchingEngineSoA(MATCHING_ENGINE_CAPACITY, PRICE_TICKS);
 
             // Un seul ordre résident à ce niveau de prix : removeIf()
             // parcourt une file de taille 1 -- k=1, coût minimal de
@@ -127,12 +130,12 @@ public class MatchingEngineBenchmark {
 
     @State(Scope.Thread)
     public static class CancelWorstCaseState {
-        MatchingEngine engine;
+        MatchingEngineSoA engine;
         long orderIdToCancel;
 
         @Setup(Level.Invocation)
         public void setup() {
-            engine = new MatchingEngine();
+            engine = new MatchingEngineSoA(MATCHING_ENGINE_CAPACITY, PRICE_TICKS);
 
             // WORST_CASE_LEVEL_SIZE ordres résidents au MÊME niveau de
             // prix (même side, même price -> même file ArrayDeque dans

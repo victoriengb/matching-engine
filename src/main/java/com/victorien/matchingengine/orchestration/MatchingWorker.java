@@ -1,6 +1,6 @@
 package com.victorien.matchingengine.orchestration;
 
-import com.victorien.matchingengine.engine.MatchingEngine;
+import com.victorien.matchingengine.dod.MatchingEngineSoA;
 import com.victorien.matchingengine.generator.OrderGenerator;
 import com.victorien.matchingengine.model.OrderCommand;
 import com.victorien.matchingengine.model.Trade;
@@ -19,11 +19,11 @@ public class MatchingWorker implements Runnable {
     private final RingBuffer<OrderCommand> inputRingBufferOrderCommand;
     private final Sequence sequenceInputRingBuffer = new Sequence(-1L);
     private final RingBuffer<Trade> outputRingBufferTrade;
-    private final MatchingEngine engine;
+    private final MatchingEngineSoA engine;
 
     public MatchingWorker(RingBuffer<OrderCommand> inputRingBufferOrderCommand,
                           RingBuffer<Trade> outputRingBufferTrade,
-                          MatchingEngine engine) {
+                          MatchingEngineSoA engine) {
         this.inputRingBufferOrderCommand = inputRingBufferOrderCommand;
         this.outputRingBufferTrade = outputRingBufferTrade;
 
