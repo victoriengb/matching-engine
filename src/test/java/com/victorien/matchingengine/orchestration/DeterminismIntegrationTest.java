@@ -1,6 +1,6 @@
 package com.victorien.matchingengine.orchestration;
 
-import com.victorien.matchingengine.engine.MatchingEngine;
+import com.victorien.matchingengine.dod.MatchingEngineSoA;
 import com.victorien.matchingengine.generator.OrderGenerator;
 import com.victorien.matchingengine.model.OrderCommand;
 import com.victorien.matchingengine.model.Trade;
@@ -27,6 +27,9 @@ class DeterminismIntegrationTest {
 
     private static final double TEST_RATE_PER_SECOND = 100.0;
     private static final int RING_CAPACITY = 2048;
+
+    private static final int MATCHING_ENGINE_CAPACITY = 8192;
+    private static final int PRICE_TICKS = 10_000_000;
 
     @Test
     void samesSeedShouldProduceIdenticalTradeSequence() throws InterruptedException {
@@ -61,7 +64,7 @@ class DeterminismIntegrationTest {
     private List<Trade> runPipeline(int commandCount) throws InterruptedException {
         RingBuffer<OrderCommand> commands = new RingBuffer<>(RING_CAPACITY);
         RingBuffer<Trade> trades = new RingBuffer<>(RING_CAPACITY);
-        MatchingEngine engine = new MatchingEngine();
+        MatchingEngineSoA engine = new MatchingEngineSoA(MATCHING_ENGINE_CAPACITY, PRICE_TICKS);
 
         Thread generator = new Thread(
                 new OrderGenerator(commands, commandCount, TEST_RATE_PER_SECOND));

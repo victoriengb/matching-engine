@@ -1,6 +1,6 @@
 package com.victorien.matchingengine.orchestration;
 
-import com.victorien.matchingengine.engine.MatchingEngine;
+import com.victorien.matchingengine.dod.MatchingEngineSoA;
 import com.victorien.matchingengine.generator.OrderGenerator;
 import com.victorien.matchingengine.model.OrderCommand;
 import com.victorien.matchingengine.model.Trade;
@@ -30,11 +30,14 @@ class MatchingWorkerInterruptionTest {
 
     private static final int RING_CAPACITY = 8;
 
+    private static final int MATCHING_ENGINE_CAPACITY = 8192;
+    private static final int PRICE_TICKS = 10_000_000;
+
     @Test
     void normalShutdownShouldPropagateSignalExactlyOnce() throws InterruptedException {
         RingBuffer<OrderCommand> inputRing = new RingBuffer<>(RING_CAPACITY);
         RingBuffer<Trade> outputRing = new RingBuffer<>(RING_CAPACITY);
-        MatchingWorker worker = new MatchingWorker(inputRing, outputRing, new MatchingEngine());
+        MatchingWorker worker = new MatchingWorker(inputRing, outputRing, new MatchingEngineSoA(MATCHING_ENGINE_CAPACITY, PRICE_TICKS));
 
         long seq = inputRing.next();
         inputRing.set(seq, OrderGenerator.SHUTDOWN_SIGNAL);
@@ -54,7 +57,7 @@ class MatchingWorkerInterruptionTest {
     void interruptionWhileSpinningShouldStillPropagateShutdownSignal() throws InterruptedException {
         RingBuffer<OrderCommand> inputRing = new RingBuffer<>(RING_CAPACITY);
         RingBuffer<Trade> outputRing = new RingBuffer<>(RING_CAPACITY);
-        MatchingWorker worker = new MatchingWorker(inputRing, outputRing, new MatchingEngine());
+        MatchingWorker worker = new MatchingWorker(inputRing, outputRing, new MatchingEngineSoA(MATCHING_ENGINE_CAPACITY, PRICE_TICKS));
 
         // Rien n'est publié sur inputRing : le thread entre immédiatement
         // en busy-spin, dans l'attente d'une séquence qui ne viendra
@@ -78,7 +81,7 @@ class MatchingWorkerInterruptionTest {
     void interruptedThreadShouldNotHangWaitingForPersistenceWorker() throws InterruptedException, java.io.IOException {
         RingBuffer<OrderCommand> inputRing = new RingBuffer<>(RING_CAPACITY);
         RingBuffer<Trade> outputRing = new RingBuffer<>(RING_CAPACITY);
-        MatchingWorker matchingWorker = new MatchingWorker(inputRing, outputRing, new MatchingEngine());
+        MatchingWorker matchingWorker = new MatchingWorker(inputRing, outputRing, new MatchingEngineSoA(MATCHING_ENGINE_CAPACITY, PRICE_TICKS));
 
         Thread matchingThread = new Thread(matchingWorker, "matching-worker-under-test");
         matchingThread.start();
